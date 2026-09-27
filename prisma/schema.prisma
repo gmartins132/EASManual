@@ -1,0 +1,83 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String?
+  createdAt    DateTime @default(now())
+}
+
+enum CategoriaDocumento {
+  MANUAL_SINDICO
+  MANUAL_TECNICO
+  GARANTIA
+  PROCEDIMENTO
+  MANUTENCAO
+  DOCUMENTACAO_CONDOMINIO
+  OUTRO
+}
+
+enum StatusDocumento {
+  PROCESSANDO
+  PRONTO
+  ERRO
+}
+
+model Empreendimento {
+  id         String      @id @default(cuid())
+  nome       String
+  endereco   String?
+  descricao  String?
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+  documentos Documento[]
+  mensagens  Mensagem[]
+}
+
+model Documento {
+  id               String             @id @default(cuid())
+  empreendimentoId String
+  empreendimento   Empreendimento     @relation(fields: [empreendimentoId], references: [id], onDelete: Cascade)
+  nomeArquivo      String
+  categoria        CategoriaDocumento @default(OUTRO)
+  storagePath      String
+  tamanhoBytes     Int?
+  status           StatusDocumento    @default(PROCESSANDO)
+  erro             String?
+  createdAt        DateTime           @default(now())
+  chunks           Chunk[]
+
+  @@index([empreendimentoId])
+}
+
+model Chunk {
+  id               String    @id @default(cuid())
+  documentoId      String
+  documento        Documento @relation(fields: [documentoId], references: [id], onDelete: Cascade)
+  empreendimentoId String
+  conteudo         String
+  ordem            Int
+  embedding        Unsupported("vector(1536)")
+  createdAt        DateTime  @default(now())
+
+  @@index([empreendimentoId])
+}
+
+model Mensagem {
+  id               String         @id @default(cuid())
+  empreendimentoId String
+  empreendimento   Empreendimento @relation(fields: [empreendimentoId], references: [id], onDelete: Cascade)
+  role             String
+  conteudo         String
+  fontes           String?
+  createdAt        DateTime       @default(now())
+
+  @@index([empreendimentoId])
+}
