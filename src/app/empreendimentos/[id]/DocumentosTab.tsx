@@ -38,6 +38,7 @@ export default function DocumentosTab({
   const [categoria, setCategoria] = useState<string>("MANUAL_SINDICO");
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [reprocessingIds, setReprocessingIds] = useState<Set<string>>(new Set());
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [, startTransition] = useTransition();
 
@@ -111,6 +112,34 @@ export default function DocumentosTab({
 
     setUploading(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
+  async function handleReprocess(documentoId: string) {
+    setError(null);
+    setReprocessingIds((prev) => new Set(prev).add(documentoId));
+    try {
+      const res = await fetch(
+        `/api/empreendimentos/${empreendimentoId}/documentos/${documentoId}/process`,
+        { method: "POST" }
+      );
+      const data = await res.json();
+      if (data.documento) {
+        setDocumentos((prev) =>
+          prev.map((d) => (d.id === data.documento.id ? data.documento : d))
+        );
+      }
+      if (!res.ok) {
+        setError(data.error ?? "Falha ao reprocessar documento.");
+      }
+    } catch {
+      setError("Falha ao reprocessar documento.");
+    } finally {
+      setReprocessingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(documentoId);
+        return next;
+      });
+    }
   }
 
   function handleDelete(documentoId: string) {
@@ -197,13 +226,24 @@ export default function DocumentosTab({
                   </td>
                   <td className="px-5 py-3">
                     <span
-                      title={doc.erro ?? undefined}
                       className={`rounded-full px-2.5 py-1 text-xs font-medium ${STATUS_STYLES[doc.status] ?? ""}`}
                     >
                       {STATUS_LABEL[doc.status] ?? doc.status}
                     </span>
+                    {doc.status === "ERRO" && doc.erro && (
+                      <p className="mt-1 max-w-xs text-xs text-red-500">{doc.erro}</p>
+                    )}
                   </td>
-                  <td className="px-5 py-3 text-right">
+                  <td className="px-5 py-3 text-right whitespace-nowrap">
+                    {doc.status === "ERRO" && (
+                      <button
+                        onClick={() => handleReprocess(doc.id)}
+                        disabled={reprocessingIds.has(doc.id)}
+                        className="mr-3 text-xs font-medium text-slate-600 hover:text-slate-900 disabled:opacity-50"
+                      >
+                        {reprocessingIds.has(doc.id) ? "Processando..." : "Tentar novamente"}
+                      </button>
+                    )}
                     <button
                       onClick={() => handleDelete(doc.id)}
                       className="text-xs font-medium text-red-500 hover:text-red-700"
