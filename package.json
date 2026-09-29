@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "postinstall": "prisma generate",
-    "db:enable-vector": "prisma db execute --file prisma/enable_vector.sql --schema prisma/schema.prisma",
+    "db:enable-vector": "prisma db execute --file prisma/enable_vector.sql",
     "db:push": "prisma db push",
     "db:setup": "npm run db:enable-vector && npm run db:push",
     "db:seed": "tsx prisma/seed.ts"
