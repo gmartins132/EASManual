@@ -4,6 +4,10 @@ import { useRef, useState, useTransition } from "react";
 import type { Documento } from "@prisma/client";
 import { CATEGORIAS, categoriaLabel } from "@/lib/categorias";
 import { deleteDocumento } from "@/app/actions/empreendimentos";
+import { supabaseBrowser, DOCUMENTOS_BUCKET } from "@/lib/supabaseBrowser";
+
+const ALLOWED_EXTENSIONS = ["pdf", "docx", "txt"];
+const MAX_SIZE_BYTES = 20 * 1024 * 1024;
 
 const STATUS_STYLES: Record<string, string> = {
   PRONTO: "bg-emerald-50 text-emerald-700",
@@ -43,21 +47,63 @@ export default function DocumentosTab({
     setUploading(true);
 
     for (const file of Array.from(files)) {
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("categoria", categoria);
+      const extensao = file.name.toLowerCase().split(".").pop() ?? "";
+      if (!ALLOWED_EXTENSIONS.includes(extensao)) {
+        setError(`"${file.name}": formato não suportado. Envie PDF, DOCX ou TXT.`);
+        continue;
+      }
+      if (file.size > MAX_SIZE_BYTES) {
+        setError(`"${file.name}": arquivo muito grande (máximo 20MB).`);
+        continue;
+      }
 
       try {
-        const res = await fetch(
-          `/api/empreendimentos/${empreendimentoId}/documentos`,
-          { method: "POST", body: formData }
+        // 1. Pede uma URL assinada para o navegador enviar o arquivo direto ao
+        // Storage (evita o limite de tamanho de requisição das funções serverless).
+        const signRes = await fetch(
+          `/api/empreendimentos/${empreendimentoId}/documentos/sign-upload`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              nomeArquivo: file.name,
+              categoria,
+              tamanhoBytes: file.size,
+            }),
+          }
         );
-        const data = await res.json();
-        if (!res.ok) {
-          setError(data.error ?? `Falha ao enviar "${file.name}".`);
+        const signData = await signRes.json();
+        if (!signRes.ok) {
+          setError(signData.error ?? `Falha ao preparar envio de "${file.name}".`);
           continue;
         }
-        setDocumentos((prev) => [data.documento, ...prev]);
+
+        setDocumentos((prev) => [signData.documento, ...prev]);
+
+        // 2. Envia o arquivo direto para o Supabase Storage.
+        const { error: uploadError } = await supabaseBrowser.storage
+          .from(DOCUMENTOS_BUCKET)
+          .uploadToSignedUrl(signData.documento.storagePath, signData.token, file);
+
+        if (uploadError) {
+          setError(`Falha ao enviar "${file.name}" para o armazenamento.`);
+          continue;
+        }
+
+        // 3. Aciona o processamento (extração de texto + embeddings) no servidor.
+        const processRes = await fetch(
+          `/api/empreendimentos/${empreendimentoId}/documentos/${signData.documento.id}/process`,
+          { method: "POST" }
+        );
+        const processData = await processRes.json();
+        if (processData.documento) {
+          setDocumentos((prev) =>
+            prev.map((d) => (d.id === processData.documento.id ? processData.documento : d))
+          );
+        }
+        if (!processRes.ok) {
+          setError(processData.error ?? `Falha ao processar "${file.name}".`);
+        }
       } catch {
         setError(`Falha ao enviar "${file.name}".`);
       }

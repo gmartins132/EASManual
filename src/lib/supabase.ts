@@ -27,6 +27,26 @@ export async function uploadDocumentoArquivo(
   }
 }
 
+export async function createSignedUploadUrl(path: string) {
+  const { data, error } = await supabaseAdmin.storage
+    .from(DOCUMENTOS_BUCKET)
+    .createSignedUploadUrl(path);
+  if (error || !data) {
+    throw new Error(`Falha ao gerar URL de upload: ${error?.message ?? "desconhecido"}`);
+  }
+  return data;
+}
+
+export async function downloadDocumentoArquivo(path: string): Promise<Buffer> {
+  const { data, error } = await supabaseAdmin.storage
+    .from(DOCUMENTOS_BUCKET)
+    .download(path);
+  if (error || !data) {
+    throw new Error(`Falha ao baixar arquivo do storage: ${error?.message ?? "desconhecido"}`);
+  }
+  return Buffer.from(await data.arrayBuffer());
+}
+
 export async function removeDocumentoArquivo(path: string) {
   const { error } = await supabaseAdmin.storage
     .from(DOCUMENTOS_BUCKET)
